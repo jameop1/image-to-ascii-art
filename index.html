@@ -1,0 +1,2057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>PicToText — Image to ASCII Art Converter</title>
+<meta name="description" content="Turn any image into ASCII art you can paste into Discord, READMEs, and bios. 100% in your browser — nothing is uploaded.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>▓</text></svg>">
+<style>
+/* ============================================================
+   PicToText — monochrome design system
+   Strictly achromatic. Hierarchy comes from weight, scale and
+   rule-lines — never from colour. Light and dark are exact
+   inverses of one another.
+   ============================================================ */
+:root{
+  /* surfaces — "bone white" base */
+  --bg:#fbfbfa;
+  --surface:#ffffff;
+  --surface-2:#f4f4f2;
+  --surface-3:#eceae6;
+
+  /* hairlines */
+  --rule:#e4e2dd;
+  --rule-strong:#cbc8c1;
+
+  /* ink — "charcoal" */
+  --ink:#141414;
+  --ink-2:#585858;
+  --ink-3:#8a8a8a;
+  --ink-4:#b4b4b4;
+
+  /* inverted block (buttons, toasts) */
+  --invert-bg:#141414;
+  --invert-fg:#ffffff;
+
+  --radius:0px;
+  --tap:44px;
+  --maxw:1320px;
+
+  --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
+
+  /* motion */
+  --ease:cubic-bezier(.22,.61,.36,1);
+  --dur:.28s;
+}
+
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#0c0c0c;
+    --surface:#141414;
+    --surface-2:#1a1a1a;
+    --surface-3:#232323;
+    --rule:#2a2a2a;
+    --rule-strong:#3d3d3d;
+    --ink:#f4f4f2;
+    --ink-2:#a8a8a8;
+    --ink-3:#7a7a7a;
+    --ink-4:#565656;
+    --invert-bg:#f4f4f2;
+    --invert-fg:#141414;
+  }
+}
+
+/* Explicit override — wins over the OS preference in both directions. */
+:root[data-theme="light"]{
+  --bg:#fbfbfa;--surface:#ffffff;--surface-2:#f4f4f2;--surface-3:#eceae6;
+  --rule:#e4e2dd;--rule-strong:#cbc8c1;
+  --ink:#141414;--ink-2:#585858;--ink-3:#8a8a8a;--ink-4:#b4b4b4;
+  --invert-bg:#141414;--invert-fg:#ffffff;
+}
+:root[data-theme="dark"]{
+  --bg:#0c0c0c;--surface:#141414;--surface-2:#1a1a1a;--surface-3:#232323;
+  --rule:#2a2a2a;--rule-strong:#3d3d3d;
+  --ink:#f4f4f2;--ink-2:#a8a8a8;--ink-3:#7a7a7a;--ink-4:#565656;
+  --invert-bg:#f4f4f2;--invert-fg:#141414;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--ink);
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  min-height:100vh;
+  font-size:16px;
+}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 32px}
+@media (max-width:900px){.wrap{padding:0 20px}}
+@media (max-width:520px){.wrap{padding:0 16px}}
+
+/* ---------- Typographic primitives ---------- */
+.eyebrow{
+  font-size:.6875rem;font-weight:600;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-3);
+}
+.rule{height:1px;background:var(--rule);border:0}
+.mono{font-family:var(--mono);font-variant-ligatures:none}
+
+/* ============================================================
+   Header — thin bar with a hairline base
+   ============================================================ */
+.masthead{
+  position:sticky;top:0;z-index:60;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:saturate(180%) blur(14px);
+  -webkit-backdrop-filter:saturate(180%) blur(14px);
+  border-bottom:1px solid var(--rule);
+}
+.masthead-in{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:24px;height:60px;
+}
+.brand{display:flex;align-items:center;gap:11px;text-decoration:none;color:inherit;flex:none}
+.brand-mark{
+  width:26px;height:26px;flex:none;
+  display:grid;place-items:center;
+  font-family:var(--mono);font-size:15px;font-weight:700;line-height:1;
+  background:var(--ink);color:var(--bg);
+}
+.brand-name{font-size:.9375rem;font-weight:650;letter-spacing:-.015em;white-space:nowrap}
+.masthead-actions{display:flex;align-items:center;gap:4px}
+
+.ghost-btn{
+  appearance:none;background:none;border:0;color:var(--ink-2);
+  font-family:inherit;font-size:.8125rem;font-weight:520;letter-spacing:-.005em;
+  padding:0 12px;height:32px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;
+  transition:color var(--dur) var(--ease),background var(--dur) var(--ease);
+}
+.ghost-btn:hover{color:var(--ink);background:var(--surface-2)}
+.ghost-btn:focus-visible{outline:1px solid var(--ink);outline-offset:1px}
+.ghost-btn svg{width:14px;height:14px}
+@media (max-width:620px){.masthead-actions .ghost-label{display:none}}
+
+/* ============================================================
+   Hero — extreme negative space, oversized type
+   ============================================================ */
+.hero{padding:104px 0 64px;max-width:900px}
+@media (max-width:900px){.hero{padding:64px 0 44px}}
+@media (max-width:520px){.hero{padding:48px 0 32px}}
+
+.hero h1{
+  font-size:clamp(2.75rem,7.2vw,5.75rem);
+  font-weight:680;
+  letter-spacing:-.045em;
+  line-height:.98;
+  margin:22px 0 0;
+  text-wrap:balance;
+}
+.hero h1 .thin{font-weight:250;color:var(--ink-3)}
+.hero-sub{
+  margin-top:26px;
+  font-size:clamp(1rem,1.35vw,1.1875rem);
+  color:var(--ink-2);max-width:56ch;line-height:1.55;
+}
+.hero-meta{
+  margin-top:40px;display:flex;flex-wrap:wrap;gap:0;
+  border-top:1px solid var(--rule);
+}
+.hero-meta div{
+  padding:16px 32px 0 0;margin-right:32px;
+  border-right:1px solid var(--rule);
+  font-size:.75rem;color:var(--ink-3);letter-spacing:.02em;
+}
+.hero-meta div:last-child{border-right:0;margin-right:0;padding-right:0}
+.hero-meta b{display:block;font-size:1.375rem;font-weight:600;color:var(--ink);letter-spacing:-.02em;margin-bottom:2px}
+@media (max-width:600px){
+  .hero-meta div{padding:12px 20px 0 0;margin-right:20px}
+  .hero-meta b{font-size:1.125rem}
+}
+
+/* ============================================================
+   Workspace — two columns collapsed to one on mobile
+   ============================================================ */
+.workspace{
+  display:grid;grid-template-columns:352px minmax(0,1fr);
+  gap:1px;background:var(--rule);border:1px solid var(--rule);
+  align-items:start;
+}
+@media (max-width:1000px){.workspace{grid-template-columns:1fr}}
+.pane{background:var(--surface);min-width:0}
+
+.pane-head{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:15px 20px;border-bottom:1px solid var(--rule);
+  min-height:52px;
+}
+.pane-body{padding:20px}
+
+/* sticky output column on desktop */
+@media (min-width:1001px){
+  .pane--out{position:sticky;top:61px}
+}
+
+/* ---------- Step blocks ---------- */
+.step{padding:20px;border-bottom:1px solid var(--rule)}
+.step:last-child{border-bottom:0}
+.step-head{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.step-num{
+  font-family:var(--mono);font-size:.6875rem;font-weight:600;
+  color:var(--ink-4);letter-spacing:.04em;flex:none;
+  padding-top:1px;
+}
+.step-title{font-size:.8125rem;font-weight:640;letter-spacing:.005em}
+
+/* ============================================================
+   Dropzone — the one large geometric gesture
+   ============================================================ */
+.dropzone{
+  border:1px dashed var(--rule-strong);
+  background:var(--surface-2);
+  padding:44px 20px;text-align:center;cursor:pointer;
+  transition:border-color var(--dur) var(--ease),background var(--dur) var(--ease);
+  position:relative;
+}
+.dropzone:hover{border-color:var(--ink-3);background:var(--surface-3)}
+.dropzone:focus-visible{outline:2px solid var(--ink);outline-offset:3px}
+.dropzone.drag{border-color:var(--ink);background:var(--surface-3)}
+.dropzone.drag:after{
+  content:"";position:absolute;inset:-1px;border:1px solid var(--ink);
+  pointer-events:none;
+}
+.dropzone.has-image{padding:0;border-style:solid;border-color:var(--rule);background:var(--surface)}
+
+.dz-icon{color:var(--ink-4);margin-bottom:16px;transition:color var(--dur) var(--ease)}
+.dropzone:hover .dz-icon,.dropzone.drag .dz-icon{color:var(--ink)}
+.dz-main{font-size:.9375rem;font-weight:580;letter-spacing:-.01em}
+.dz-sub{color:var(--ink-3);font-size:.8125rem;margin-top:6px}
+.dz-formats{
+  color:var(--ink-4);font-size:.6875rem;margin-top:18px;
+  font-family:var(--mono);letter-spacing:.06em;
+}
+
+.preview-img{
+  display:block;width:100%;height:auto;max-height:260px;
+  object-fit:contain;background:var(--surface-2);
+}
+.preview-bar{
+  display:flex;align-items:center;gap:10px;padding:10px 14px;
+  border-top:1px solid var(--rule);background:var(--surface-2);
+  font-size:.75rem;color:var(--ink-2);
+}
+.preview-bar .meta{
+  font-family:var(--mono);flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+
+/* ============================================================
+   Controls
+   ============================================================ */
+.ctrl{margin-bottom:22px}
+.ctrl:last-child{margin-bottom:0}
+.ctrl-label{
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  margin-bottom:10px;
+}
+.ctrl-name{font-size:.8125rem;font-weight:580}
+.ctrl-val{
+  font-family:var(--mono);font-size:.75rem;color:var(--ink);
+  font-weight:600;letter-spacing:.02em;
+}
+.ctrl-note{font-size:.75rem;color:var(--ink-3);margin-top:8px;line-height:1.5}
+
+/* range — square monochrome thumb */
+input[type=range]{
+  -webkit-appearance:none;appearance:none;
+  width:100%;height:2px;background:var(--rule-strong);
+  outline:none;cursor:pointer;margin:9px 0;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:13px;height:13px;
+  background:var(--ink);border:0;border-radius:0;cursor:grab;
+  transition:transform .12s var(--ease);
+}
+input[type=range]::-webkit-slider-thumb:active{cursor:grabbing;transform:scale(1.25)}
+input[type=range]::-moz-range-thumb{
+  width:13px;height:13px;background:var(--ink);border:0;border-radius:0;cursor:grab;
+}
+input[type=range]::-moz-range-track{height:2px;background:var(--rule-strong)}
+input[type=range]:focus-visible{outline:1px solid var(--ink);outline-offset:6px}
+
+select,textarea,input[type=text]{
+  width:100%;font-family:var(--mono);font-size:.8125rem;color:var(--ink);
+  background:var(--surface);border:1px solid var(--rule-strong);
+  border-radius:0;padding:10px 12px;
+  transition:border-color .16s var(--ease);
+}
+select{
+  cursor:pointer;appearance:none;padding-right:34px;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a8a' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 11px center;background-size:14px;
+}
+select:focus,textarea:focus,input:focus{
+  outline:none;border-color:var(--ink);
+}
+textarea{resize:vertical;min-height:70px;line-height:1.55}
+select:focus-visible,textarea:focus-visible{outline:1px solid var(--ink);outline-offset:2px}
+
+/* ---------- Segmented control — hairline grid ---------- */
+.segmented{display:flex;border:1px solid var(--rule-strong)}
+.segmented button{
+  flex:1;appearance:none;border:0;background:transparent;
+  border-right:1px solid var(--rule-strong);
+  color:var(--ink-2);font-family:inherit;font-size:.75rem;font-weight:540;
+  padding:9px 6px;cursor:pointer;white-space:nowrap;
+  transition:background .16s var(--ease),color .16s var(--ease);
+}
+.segmented button:last-child{border-right:0}
+.segmented button:hover{background:var(--surface-2);color:var(--ink)}
+.segmented button.active{background:var(--ink);color:var(--bg)}
+.segmented button:focus-visible{outline:1px solid var(--ink);outline-offset:-3px;z-index:1}
+
+/* ---------- Switch list ---------- */
+.switch-list{border-top:1px solid var(--rule)}
+.switch-row{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:13px 0;border-bottom:1px solid var(--rule);
+}
+.switch-row:last-child{border-bottom:0;padding-bottom:0}
+.switch-text{min-width:0}
+.switch-name{font-size:.8125rem;font-weight:540}
+.switch-hint{font-size:.75rem;color:var(--ink-3);margin-top:2px;line-height:1.45}
+.switch{position:relative;width:34px;height:20px;flex:none}
+.switch input{opacity:0;width:0;height:0;position:absolute}
+.slider{
+  position:absolute;inset:0;background:transparent;
+  border:1px solid var(--rule-strong);cursor:pointer;
+  transition:background .2s var(--ease),border-color .2s var(--ease);
+}
+.slider:before{
+  content:"";position:absolute;width:10px;height:10px;left:4px;top:4px;
+  background:var(--ink-3);
+  transition:transform .2s var(--ease),background .2s var(--ease);
+}
+.switch input:checked + .slider{background:var(--ink);border-color:var(--ink)}
+.switch input:checked + .slider:before{transform:translateX(14px);background:var(--bg)}
+.switch input:focus-visible + .slider{outline:1px solid var(--ink);outline-offset:2px}
+
+/* ============================================================
+   Buttons — square, monochrome
+   ============================================================ */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  font-family:inherit;font-size:.8125rem;font-weight:560;letter-spacing:-.005em;
+  padding:9px 15px;border:1px solid var(--rule-strong);border-radius:0;
+  background:var(--surface);color:var(--ink);cursor:pointer;
+  transition:background .16s var(--ease),color .16s var(--ease),border-color .16s var(--ease);
+  white-space:nowrap;line-height:1.2;
+}
+.btn:hover:not(:disabled){background:var(--surface-2);border-color:var(--ink-3)}
+.btn:active:not(:disabled){background:var(--surface-3)}
+.btn:focus-visible{outline:1px solid var(--ink);outline-offset:2px}
+.btn:disabled{opacity:.32;cursor:not-allowed}
+.btn svg{width:14px;height:14px;flex:none}
+.btn-primary{background:var(--invert-bg);color:var(--invert-fg);border-color:var(--invert-bg)}
+.btn-primary:hover:not(:disabled){background:var(--ink-2);border-color:var(--ink-2);color:var(--invert-fg)}
+.btn-sm{padding:6px 10px;font-size:.75rem}
+.btn-sm svg{width:12px;height:12px}
+.btn-glyph{padding:5px 8px;font-family:var(--mono);font-size:.75rem;letter-spacing:0}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* small square icon button used in the masthead */
+.icon-btn{
+  width:32px;height:32px;display:grid;place-items:center;
+  border:1px solid transparent;background:transparent;color:var(--ink-2);
+  cursor:pointer;transition:color var(--dur) var(--ease),background var(--dur) var(--ease);
+}
+.icon-btn:hover{color:var(--ink);background:var(--surface-2)}
+.icon-btn svg{width:16px;height:16px}
+
+/* ============================================================
+   Output stage
+   ============================================================ */
+.stage{
+  position:relative;min-height:420px;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .2s var(--ease);
+}
+.stage--dark{background:#0c0c0c}
+.stage--light{background:#ffffff}
+@media (max-width:1000px){.stage{min-height:300px}}
+
+.ascii-pre{
+  font-family:var(--mono);line-height:1;margin:0;
+  padding:24px;white-space:pre;overflow:auto;
+  width:100%;max-height:min(74vh,840px);
+  font-variant-ligatures:none;tab-size:1;
+  color:inherit;overflow-anchor:none;
+}
+.ascii-pre:focus-visible{outline:1px solid currentColor;outline-offset:-5px}
+.ascii-pre::selection{background:rgba(128,128,128,.45)}
+.ascii-pre::-moz-selection{background:rgba(128,128,128,.45)}
+
+.empty-state{
+  text-align:center;padding:56px 24px;
+  color:var(--ink-4);
+}
+.stage--dark .empty-state{color:#4d4d4d}
+.empty-state svg{margin-bottom:18px}
+.empty-state .es-title{font-size:.875rem;font-weight:560}
+.empty-state .es-sub{font-size:.75rem;margin-top:6px;max-width:32ch;margin-inline:auto;line-height:1.5}
+
+.stage-status{
+  display:flex;align-items:center;gap:10px;
+  padding:9px 20px;border-top:1px solid var(--rule);
+  background:var(--surface-2);
+  font-size:.6875rem;color:var(--ink-3);font-family:var(--mono);
+  letter-spacing:.03em;flex-wrap:wrap;min-height:36px;
+}
+.stage-status .mark{
+  width:5px;height:5px;flex:none;background:var(--ink);
+}
+.stage-status .mark.idle{background:var(--ink-4)}
+.stage-status .mark.busy{animation:blink 1.1s steps(2,end) infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
+.spacer{flex:1}
+
+/* ============================================================
+   Toast — inverted slab
+   ============================================================ */
+.toast-host{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  z-index:999;display:flex;flex-direction:column;gap:8px;align-items:center;
+  pointer-events:none;width:calc(100% - 40px);max-width:460px;
+}
+.toast{
+  display:flex;align-items:center;gap:10px;
+  background:var(--invert-bg);color:var(--invert-fg);
+  padding:11px 16px;font-size:.8125rem;font-weight:520;
+  max-width:100%;box-shadow:0 1px 0 rgba(0,0,0,.06);
+  animation:toastIn .3s var(--ease);
+}
+.toast.out{animation:toastOut .24s var(--ease) forwards}
+.toast svg{width:14px;height:14px;flex:none}
+/* Error and success states are distinguished by weight and an edge rule,
+   not by hue — the palette stays strictly achromatic. */
+.toast.err{box-shadow:inset 3px 0 0 var(--ink-2),0 1px 0 rgba(0,0,0,.06)}
+.toast.err svg{opacity:1}
+.toast.ok svg{opacity:.5}
+@keyframes toastIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes toastOut{to{opacity:0;transform:translateY(8px)}}
+
+/* ============================================================
+   Editorial sections
+   ============================================================ */
+.section{padding:88px 0;border-top:1px solid var(--rule)}
+@media (max-width:900px){.section{padding:56px 0}}
+.section-head{margin-bottom:48px;max-width:760px}
+.section-head h2{
+  font-size:clamp(1.625rem,3.1vw,2.5rem);font-weight:650;
+  letter-spacing:-.035em;line-height:1.06;margin-top:18px;
+}
+.section-head p{
+  margin-top:18px;color:var(--ink-2);
+  font-size:1rem;max-width:62ch;line-height:1.6;
+}
+
+/* number → title → copy : strict vertical grid */
+.grid-3{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:1px;background:var(--rule);border:1px solid var(--rule);
+}
+@media (max-width:820px){.grid-3{grid-template-columns:1fr}}
+.cell{background:var(--surface);padding:32px 28px;min-height:210px}
+.cell-n{
+  font-family:var(--mono);font-size:.6875rem;color:var(--ink-4);
+  letter-spacing:.08em;
+}
+.cell h3{
+  font-size:1.0625rem;font-weight:620;letter-spacing:-.02em;
+  margin:20px 0 10px;
+}
+.cell p{font-size:.875rem;color:var(--ink-2);line-height:1.6}
+.cell-icon{color:var(--ink-3);margin-top:24px}
+
+/* FAQ — full-bleed rows, no boxes */
+.faq{border-top:1px solid var(--rule)}
+.faq details{border-bottom:1px solid var(--rule)}
+.faq summary{
+  list-style:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:space-between;gap:24px;
+  padding:26px 0;font-size:1.0625rem;font-weight:560;letter-spacing:-.015em;
+  transition:color var(--dur) var(--ease);
+}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary:hover{color:var(--ink-2)}
+.faq summary:focus-visible{outline:1px solid var(--ink);outline-offset:4px}
+.faq summary .pm{
+  font-family:var(--mono);font-size:1rem;color:var(--ink-3);flex:none;
+  width:20px;text-align:center;transition:transform var(--dur) var(--ease);
+}
+.faq details[open] summary .pm{transform:rotate(45deg)}
+.faq .faq-body{
+  padding:0 0 30px;max-width:68ch;
+  font-size:.9375rem;color:var(--ink-2);line-height:1.65;
+  animation:faqReveal .32s var(--ease);
+}
+/* Named faqReveal, not `reveal` — that identifier is already used by the
+   utility class driving scroll animations, and sharing it lets the keyframe
+   clobber that class's opacity. */
+@keyframes faqReveal{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.faq .faq-body p+p{margin-top:12px}
+.faq .faq-body ul{margin:12px 0 0 20px}
+.faq .faq-body li{margin-bottom:7px}
+
+/* inline code — hairline, monochrome */
+code{
+  font-family:var(--mono);font-size:.875em;
+  background:var(--surface-2);border:1px solid var(--rule);
+  padding:1px 5px;white-space:nowrap;
+}
+kbd{
+  font-family:var(--mono);font-size:.8125rem;color:var(--ink);
+  border:1px solid var(--rule-strong);background:var(--surface-2);
+  padding:1px 5px;white-space:nowrap;
+}
+
+/* paste-target list */
+.targets{display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule);margin-top:8px}
+@media (min-width:760px){.targets{grid-template-columns:repeat(2,1fr)}}
+.target{background:var(--surface);padding:24px 26px}
+.target h4{font-size:.875rem;font-weight:620;letter-spacing:-.01em;margin-bottom:7px}
+.target p{font-size:.8125rem;color:var(--ink-2);line-height:1.6}
+
+/* ---------- Footer ---------- */
+.footer{
+  border-top:1px solid var(--rule);padding:56px 0 72px;
+}
+.footer-top{
+  display:flex;justify-content:space-between;gap:40px;flex-wrap:wrap;
+}
+.footer-brand{display:flex;align-items:center;gap:11px}
+.footer-cols{display:flex;gap:56px;flex-wrap:wrap}
+.footer-col h5{
+  font-size:.6875rem;font-weight:620;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-3);margin-bottom:14px;
+}
+.footer-col ul{list-style:none}
+.footer-col li{font-size:.8125rem;color:var(--ink-2);margin-bottom:9px}
+.footer-col a{color:inherit;text-decoration:none;transition:color var(--dur) var(--ease)}
+.footer-col a:hover{color:var(--ink)}
+.footer-base{
+  margin-top:48px;padding-top:24px;border-top:1px solid var(--rule);
+  display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;
+  font-size:.75rem;color:var(--ink-3);
+}
+
+/* ---------- Shared utilities ---------- */
+.fade-in{animation:fadeIn .34s var(--ease)}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[hidden]{display:none !important}
+
+/* reveal-on-scroll */
+.reveal{opacity:0;transform:translateY(14px);transition:opacity .6s var(--ease),transform .6s var(--ease)}
+.reveal.in{opacity:1;transform:none}
+
+::-webkit-scrollbar{width:11px;height:11px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--rule-strong)}
+::-webkit-scrollbar-thumb:hover{background:var(--ink-4)}
+
+@media (max-width:520px){
+  .step,.pane-body{padding:16px}
+  .pane-head{padding:13px 16px}
+  .stage-status{padding:9px 16px}
+  .ascii-pre{padding:14px}
+  .footer{padding:40px 0 52px}
+  .footer-cols{gap:32px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*:before,*:after{
+    animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+  }
+  .reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ============ MASTHEAD ============ -->
+  <header class="masthead" style="margin:0 -32px">
+    <div class="wrap">
+      <div class="masthead-in">
+        <a class="brand" href="#top">
+          <span class="brand-mark" aria-hidden="true">▓</span>
+          <span class="brand-name">PicToText</span>
+        </a>
+        <nav class="masthead-actions" aria-label="Sections">
+          <button class="ghost-btn" type="button" id="navHow">
+            <span class="ghost-label">How it works</span>
+          </button>
+          <button class="ghost-btn" type="button" id="navFaq">
+            <span class="ghost-label">FAQ</span>
+          </button>
+          <button class="ghost-btn" type="button" id="btnTheme" aria-label="Toggle colour scheme" title="Toggle colour scheme">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/>
+              <circle cx="12" cy="12" r="4"/>
+            </svg>
+          </button>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+
+  <!-- ============ HERO ============ -->
+  <section class="hero">
+    <p class="eyebrow">Image → ASCII art · runs entirely on this device</p>
+    <h1>Any image,<br><span class="thin">reduced to text.</span></h1>
+    <p class="hero-sub">
+      Drop in a photo and it comes back as characters you can paste into a Discord
+      message, a README, or a profile bio. Nothing is uploaded — the whole conversion
+      happens in this tab.
+    </p>
+    <div class="hero-meta">
+      <div><b>0</b>bytes uploaded</div>
+      <div><b>8</b>character sets</div>
+      <div><b>3</b>export formats</div>
+    </div>
+  </section>
+
+  <!-- ============ WORKSPACE ============ -->
+  <div class="workspace" id="workspace">
+
+    <!-- ---------- INPUT COLUMN ---------- -->
+    <div class="pane">
+
+      <div class="step">
+        <div class="step-head">
+          <span class="step-num">01</span>
+          <span class="step-title">Source image</span>
+        </div>
+
+        <div class="dropzone" id="dropzone" role="button" tabindex="0"
+             aria-label="Upload an image: click, press Enter, or drop a file here">
+          <div id="dzEmpty">
+            <div class="dz-icon">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="18" height="18"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle cx="8.5" cy="8" r="1.4"/>
+              </svg>
+            </div>
+            <div class="dz-main">Drop an image</div>
+            <div class="dz-sub">Click to browse · or paste from clipboard</div>
+            <div class="dz-formats">JPG · PNG · GIF · WEBP · BMP · SVG</div>
+          </div>
+          <div id="dzPreview" hidden>
+            <img class="preview-img" id="previewImg" alt="Preview of the uploaded image">
+            <div class="preview-bar">
+              <span class="meta" id="imgMeta">—</span>
+              <button class="btn btn-sm" id="btnClear" type="button">Remove</button>
+            </div>
+          </div>
+        </div>
+        <input type="file" id="fileInput" accept="image/*" class="visually-hidden">
+      </div>
+
+      <div class="step">
+        <div class="step-head">
+          <span class="step-num">02</span>
+          <span class="step-title">Tune the output</span>
+          <button class="btn btn-sm" id="btnReset" type="button" style="margin-left:auto">Reset</button>
+        </div>
+
+        <div class="ctrl">
+          <div class="ctrl-label">
+            <label class="ctrl-name" for="sWidth">Width</label>
+            <span class="ctrl-val" id="vWidth">100</span>
+          </div>
+          <input type="range" id="sWidth" min="20" max="300" step="2" value="100">
+        </div>
+
+        <div class="ctrl">
+          <div class="ctrl-label">
+            <label class="ctrl-name" for="sDensity">Density</label>
+            <span class="ctrl-val" id="vDensity">1.0</span>
+          </div>
+          <input type="range" id="sDensity" min="0.3" max="3" step="0.1" value="1">
+          <p class="ctrl-note">More characters and finer detail, at the cost of output size.</p>
+        </div>
+
+        <div class="ctrl">
+          <div class="ctrl-label">
+            <label class="ctrl-name" for="selCharset">Character set</label>
+          </div>
+          <select id="selCharset">
+            <option value="standard">Standard — 10 levels</option>
+            <option value="detailed">Detailed — 70 levels</option>
+            <option value="block">Blocks — ░▒▓█</option>
+            <option value="minimal">Minimal — @%#*</option>
+            <option value="dots">Dots — .oO@</option>
+            <option value="braille">Braille — ⠁⠃⠇⠿</option>
+            <option value="binary">Binary — 0/1</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <textarea id="txtCustom" rows="2" placeholder="@%#*+=-:. " hidden aria-label="Custom character set"></textarea>
+        </div>
+
+        <div class="ctrl">
+          <div class="ctrl-label">
+            <span class="ctrl-name">Colour</span>
+          </div>
+          <div class="segmented" id="segColor" role="group" aria-label="Colour mode">
+            <button type="button" data-color="mono" class="active">Mono</button>
+            <button type="button" data-color="color">Colour</button>
+            <button type="button" data-color="original">Original</button>
+          </div>
+          <p class="ctrl-note" id="colorNote">Mono outputs plain text — safest for pasting anywhere.</p>
+        </div>
+
+        <div class="ctrl">
+          <div class="ctrl-label">
+            <span class="ctrl-name">Preview background</span>
+          </div>
+          <div class="segmented" id="segBg" role="group" aria-label="Preview background">
+            <button type="button" data-bg="dark" class="active">Dark</button>
+            <button type="button" data-bg="light">Light</button>
+          </div>
+        </div>
+
+        <div class="switch-list">
+          <div class="switch-row">
+            <span class="switch-text">
+              <span class="switch-name">Invert brightness</span>
+              <span class="switch-hint">For light images on dark backgrounds</span>
+            </span>
+            <label class="switch"><input type="checkbox" id="chkInvert"><span class="slider"></span></label>
+          </div>
+          <div class="switch-row">
+            <span class="switch-text">
+              <span class="switch-name">Sharpen edges</span>
+              <span class="switch-hint">Boost local contrast before converting</span>
+            </span>
+            <label class="switch"><input type="checkbox" id="chkSharpen"><span class="slider"></span></label>
+          </div>
+          <div class="switch-row">
+            <span class="switch-text">
+              <span class="switch-name">Trim whitespace</span>
+              <span class="switch-hint">Crop empty rows and columns</span>
+            </span>
+            <label class="switch"><input type="checkbox" id="chkTrim"><span class="slider"></span></label>
+          </div>
+          <div class="switch-row">
+            <span class="switch-text">
+              <span class="switch-name">Live preview</span>
+              <span class="switch-hint">Re-convert while you drag</span>
+            </span>
+            <label class="switch"><input type="checkbox" id="chkLive" checked><span class="slider"></span></label>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ---------- OUTPUT COLUMN ---------- -->
+    <div class="pane pane--out">
+      <div class="pane-head">
+        <span class="eyebrow">Output</span>
+        <div class="btn-row">
+          <button class="btn btn-sm btn-glyph" id="btnFontDec" type="button" title="Smaller preview text" aria-label="Smaller preview text">A−</button>
+          <button class="btn btn-sm btn-glyph" id="btnFontInc" type="button" title="Larger preview text" aria-label="Larger preview text">A+</button>
+          <button class="btn btn-sm btn-primary" id="btnCopy" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="9" width="12" height="12"/><path d="M5 15H3V3h12v2"/>
+            </svg>
+            Copy
+          </button>
+          <button class="btn btn-sm" id="btnDownload" type="button" disabled title="Download as .txt">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 3v13M7 11l5 5 5-5M4 21h16"/>
+            </svg>
+            .txt
+          </button>
+          <button class="btn btn-sm" id="btnPng" type="button" disabled title="Download as PNG image">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18"/><circle cx="8.5" cy="8" r="1.4"/><path d="M3 16l5-5 4 4 3-3 6 6"/>
+            </svg>
+            PNG
+          </button>
+        </div>
+      </div>
+
+      <div class="stage stage--dark" id="stage">
+        <div class="empty-state" id="emptyState">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16"/><path d="M7.5 9.5l2.5 2-2.5 2M13 14.5h4"/>
+          </svg>
+          <div class="es-title">No output yet</div>
+          <div class="es-sub">Add an image and the text art appears here instantly.</div>
+        </div>
+        <pre class="ascii-pre" id="asciiPre" tabindex="0" hidden></pre>
+      </div>
+
+      <div class="stage-status">
+        <span class="mark idle" id="statusDot"></span>
+        <span id="statusText">Idle — waiting for an image</span>
+        <span class="spacer"></span>
+        <span id="statusDims">—</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ HOW IT WORKS ============ -->
+  <section class="section" id="how">
+    <div class="section-head reveal">
+      <p class="eyebrow">Method</p>
+      <h2>Brightness becomes character.</h2>
+      <p>
+        Each cell of the grid is measured for luminance, then matched to a glyph whose
+        ink coverage is closest to that brightness. Dense marks for shadow, sparse marks
+        for light. The row count is halved to compensate for monospace glyphs being
+        roughly twice as tall as they are wide.
+      </p>
+    </div>
+
+    <div class="grid-3 reveal">
+      <div class="cell">
+        <span class="cell-n">01</span>
+        <h3>Rasterise</h3>
+        <p>Your image is drawn to an offscreen canvas at the exact character-grid size, with progressive halving so large photos downscale without aliasing.</p>
+        <div class="cell-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
+          </svg>
+        </div>
+      </div>
+      <div class="cell">
+        <span class="cell-n">02</span>
+        <h3>Measure</h3>
+        <p>Every cell is converted to Rec.709 luminance and normalised to the full range, so a low-contrast scan reads as clearly as a punchy graphic.</p>
+        <div class="cell-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1" aria-hidden="true">
+            <path d="M4 19V5M4 19h16"/><path d="M8 15l3-5 3 3 5-8"/>
+          </svg>
+        </div>
+      </div>
+      <div class="cell">
+        <span class="cell-n">03</span>
+        <h3>Ramp</h3>
+        <p>Glyphs are ordered by measured ink coverage into a monotonic ramp, which is what keeps a gradient smooth instead of banding into steps.</p>
+        <div class="cell-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.1" aria-hidden="true">
+            <path d="M4 12h4M11 12h2M16 12h4"/><circle cx="4" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="20" cy="12" r="1.6"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-head reveal" style="margin:64px 0 28px">
+      <p class="eyebrow">Destinations</p>
+      <h2>Where it lands well.</h2>
+    </div>
+
+    <div class="targets reveal">
+      <div class="target">
+        <h4>Discord</h4>
+        <p>Wrap the art in triple backticks so it sends as a code block — that preserves the fixed-width spacing. Discord strips colour codes, so export a PNG if you want colour there.</p>
+      </div>
+      <div class="target">
+        <h4>GitHub README</h4>
+        <p>Same fenced code block approach. Keep widths under about 120 characters so the art does not trigger horizontal scrolling in the rendered file view.</p>
+      </div>
+      <div class="target">
+        <h4>Profile bios</h4>
+        <p>Most bios collapse runs of spaces, which shears the image. Stay under roughly 40 characters wide, or use a block charset where the glyphs carry the shape themselves.</p>
+      </div>
+      <div class="target">
+        <h4>Terminals &amp; editors</h4>
+        <p>Plain text works as-is, and mono mode is the safest choice. Download the <code>.txt</code> and open it anywhere that renders a monospace font.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FAQ ============ -->
+  <section class="section" id="faq">
+    <div class="section-head reveal">
+      <p class="eyebrow">Questions</p>
+      <h2>Details that matter.</h2>
+    </div>
+
+    <div class="faq reveal">
+      <details>
+        <summary>Is my image uploaded anywhere? <span class="pm">+</span></summary>
+        <div class="faq-body">
+          <p>No. The file is read through a local <code>blob:</code> URL and painted onto a canvas inside this page. There is no server, no analytics, and no network request of any kind. You can load the page, disconnect from the internet, and it will still convert.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>How do I get a result that actually looks good? <span class="pm">+</span></summary>
+        <div class="faq-body">
+          <ul>
+            <li><b>Start around 90–120 wide.</b> Below 60 the subject turns to mush; above 160 you get detail nobody can see at a glance.</li>
+            <li><b>Silhouettes beat busy scenes.</b> A subject against a plain or dark background reads far better than a cluttered photo.</li>
+            <li><b>Turn on Sharpen</b> for soft or slightly blurry sources — it restores the edges that make features legible.</li>
+            <li><b>Flip Invert</b> when pasting onto a dark background, otherwise the image reads as a negative.</li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Why does the pasted version lose its colour? <span class="pm">+</span></summary>
+        <div class="faq-body">
+          <p>Colour mode copies rich HTML alongside the plain text, which is how browsers and some chat clients keep the palette. Plenty of destinations — plain README files, terminals, SMS — accept only text and drop the colour regardless.</p>
+          <p>Discord in particular strips colour codes from pasted text. For a guaranteed colour result, hit <b>PNG</b> and share the image instead.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>The output looks stretched or squashed. <span class="pm">+</span></summary>
+        <div class="faq-body">
+          <p>Monospace glyphs are taller than they are wide, roughly 1:2. The converter already compensates by halving the row count, so if it still looks off it is almost always the preview font rather than the art itself. Use <b>A−</b> / <b>A+</b> to resize the preview, or set Density back to 1.0.</p>
+          <p>The copied text is unaffected by the preview size.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>What are the keyboard shortcuts? <span class="pm">+</span></summary>
+        <div class="faq-body">
+          <ul>
+            <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>O</kbd> — open the file picker</li>
+            <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>V</kbd> — paste an image</li>
+            <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>C</kbd> — copy the ASCII art</li>
+            <li><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>S</kbd> — save <code>.txt</code> (add <kbd>Shift</kbd> for <code>.png</code>)</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  </main>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="footer">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <span class="brand-mark" aria-hidden="true">▓</span>
+        <span class="brand-name">PicToText</span>
+      </div>
+      <div class="footer-cols">
+        <div class="footer-col">
+          <h5>Input</h5>
+          <ul>
+            <li>Click to browse</li>
+            <li>Drag and drop</li>
+            <li>Paste with <kbd>Ctrl</kbd>+<kbd>V</kbd></li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h5>Output</h5>
+          <ul>
+            <li>Plain text</li>
+            <li><code>.txt</code> download</li>
+            <li><code>.png</code> download</li>
+          </ul>
+        </div>
+        <div class="footer-col">
+          <h5>Privacy</h5>
+          <ul>
+            <li>No upload</li>
+            <li>No tracking</li>
+            <li>No server</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="footer-base">
+      <span>Runs entirely in your browser. Your image never leaves this device.</span>
+      <span>PicToText — image to ASCII</span>
+    </div>
+  </footer>
+
+</div>
+
+<div class="toast-host" id="toastHost" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+(function(){
+
+/* ============================================================
+   Character sets — ordered BRIGHT (dense/solid) → DARK (sparse)
+   Index 0 renders the lightest pixels, last index the darkest.
+   ============================================================ */
+const CHARSETS = {
+  standard: "@%#*+=-:. ",
+  detailed: "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. ",
+  block:    "█▓▒░ ",
+  minimal:  "@%#*+:. ",
+  dots:     "@Oo*+;:. ",
+  braille:  "⣿⣷⣯⣟⡿⢿⣻⣽⣾⣶⣴⣤⣠⣀ ",
+  binary:   "10 ",
+  custom:   "@%#*+=-:. "
+};
+
+/* ============================================================
+   Readability lookup — rough "ink coverage" per character, used
+   to build a monotonic ramp so gradients never look banded.
+   ============================================================ */
+const INK = {" ":.00,".":.06,",":.10,":":.14,";":.18,"!":.22,"|":.24,"i":.26,"l":.24,"I":.26,
+  "'":.05,"`":.06,"^":.10,"\"":.14,"~":.20,"-":.16,"_":.20,"+":.30,"=":.34,"<":.36,">":.36,
+  "*":.42,"c":.34,"v":.36,"u":.40,"n":.38,"r":.30,"x":.36,"j":.28,"f":.34,"t":.32,"z":.36,
+  "a":.42,"o":.44,"e":.44,"s":.44,"h":.46,"k":.46,"b":.48,"d":.48,"p":.46,"q":.46,"g":.46,
+  "y":.38,"A":.50,"P":.48,"S":.50,"X":.50,"C":.46,"U":.46,"V":.44,"J":.42,"L":.38,"O":.58,
+  "Q":.58,"G":.56,"D":.54,"H":.54,"N":.52,"R":.54,"B":.58,"E":.52,"K":.54,"Z":.50,"T":.46,
+  "Y":.46,"F":.48,"w":.44,"W":.62,"M":.62,"m":.58,"%":.62,"&":.60,"#":.66,"@":.82,"8":.60,
+  "$":.64,"0":.56,"1":.34,"2":.48,"3":.52,"4":.52,"5":.52,"6":.56,"7":.48,"9":.56,
+  "█":1.0,"▓":.72,"▒":.48,"░":.26,"⣿":1.0,"⣷":.88,"⣯":.82,"⣟":.78,"⡿":.74,"⢿":.72,
+  "⣻":.70,"⣽":.78,"⣾":.85,"⣶":.66,"⣴":.58,"⣤":.50,"⣠":.42,"⣀":.20};
+
+function inkOf(ch){
+  if(ch in INK) return INK[ch];
+  // Fallback: infer from unicode block density.
+  const c = ch.codePointAt(0);
+  if(c >= 0x2800 && c <= 0x28FF){ // braille
+    let bits = 0, n = c - 0x2800;
+    while(n){ bits += n & 1; n >>= 1; }
+    return bits / 8;
+  }
+  if(c > 0x2000) return .6; // pictographs / unknown wide glyphs
+  const isUpper = ch >= "A" && ch <= "Z";
+  const isLower = ch >= "a" && ch <= "z";
+  const isDigit = ch >= "0" && ch <= "9";
+  if(isUpper) return .52; if(isLower) return .40; if(isDigit) return .5;
+  return .3;
+}
+
+/**
+ * Build a monotonic ramp from a charset.
+ * Returns array of chars ordered LIGHT → DARK with non-decreasing ink.
+ * Duplicate-ink neighbours are spread evenly so the ramp stays usable.
+ */
+function buildRamp(charset){
+  const uniq = [];
+  for(const ch of charset){
+    if(uniq.indexOf(ch) === -1) uniq.push(ch);
+  }
+  if(uniq.length === 0) uniq.push("@");
+  const scored = uniq.map((ch,i)=>({ch, ink:inkOf(ch), i}));
+  scored.sort((a,b)=> a.ink - b.ink || a.i - b.i);
+  // Enforce strictly-increasing ink so equal-weight glyphs still progress.
+  const n = scored.length;
+  for(let i=0;i<n;i++){
+    const floor = i/(n-1 || 1);
+    if(scored[i].ink < floor) scored[i].ink = floor;
+  }
+  return scored.map(s=>s.ch);
+}
+
+/* ============================================================
+   DOM refs
+   ============================================================ */
+const $ = id => document.getElementById(id);
+const dropzone   = $("dropzone"),   dzEmpty   = $("dzEmpty"),  dzPreview = $("dzPreview");
+const previewImg = $("previewImg"), imgMeta   = $("imgMeta");
+const fileInput  = $("fileInput"),  btnClear  = $("btnClear"), btnReset  = $("btnReset");
+const sWidth   = $("sWidth"),   vWidth   = $("vWidth");
+const sDensity = $("sDensity"), vDensity = $("vDensity");
+const selCharset = $("selCharset"), txtCustom = $("txtCustom");
+const segColor = $("segColor"), segBg = $("segBg"), colorNote = $("colorNote");
+const chkInvert = $("chkInvert"), chkSharpen = $("chkSharpen"),
+      chkTrim = $("chkTrim"), chkLive = $("chkLive");
+const asciiPre = $("asciiPre"), emptyState = $("emptyState");
+const btnCopy = $("btnCopy"), btnDownload = $("btnDownload"), btnPng = $("btnPng");
+const btnFontDec = $("btnFontDec"), btnFontInc = $("btnFontInc");
+const statusDot = $("statusDot"), statusText = $("statusText"), statusDims = $("statusDims");
+const toastHost = $("toastHost");
+const stage = $("stage");
+const btnTheme = $("btnTheme"), navHow = $("navHow"), navFaq = $("navFaq");
+
+/* ============================================================
+   State
+   ============================================================ */
+const state = {
+  image: null,          // HTMLImageElement (decoded source)
+  fileName: "",
+  colorMode: "mono",    // mono | color | original
+  bg: "dark",           // dark | light  (preview/copy background theme)
+  bgChosen: false,      // true once the user picks a background explicitly
+  ascii: "",            // current plain-text result
+  html: "",             // current colored-HTML result
+  cols: 0, rows: 0,
+  fontPx: 10,
+  busy: false,
+  pendingRaf: 0
+};
+
+/* ============================================================
+   Toasts
+   ============================================================ */
+const ICON = {
+  ok:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  err:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>',
+  info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.01"/></svg>'
+};
+function toast(msg, kind, ms){
+  kind = kind || "info";
+  const el = document.createElement("div");
+  el.className = "toast " + (kind === "ok" ? "ok" : kind === "err" ? "err" : "");
+  el.innerHTML = (ICON[kind] || ICON.info) + "<span></span>";
+  el.querySelector("span").textContent = msg;
+  toastHost.appendChild(el);
+  setTimeout(()=>{
+    el.classList.add("out");
+    el.addEventListener("animationend", ()=> el.remove(), {once:true});
+    setTimeout(()=> el.remove(), 400);
+  }, ms || 2600);
+}
+
+/* ============================================================
+   Status line
+   ============================================================ */
+function setStatus(text, kind, dims){
+  statusText.textContent = text;
+  statusDot.className = "mark" + (kind ? " " + kind : "");
+  if(dims !== undefined) statusDims.textContent = dims;
+}
+
+/* ============================================================
+   Image loading
+   ============================================================ */
+const MAX_BYTES = 25 * 1024 * 1024;
+// Tracks the live blob URL backing the preview thumbnail so it can be revoked
+// exactly once — either after the thumbnail decodes, or on clear/replace.
+let previewThumbUrl = null;
+
+function releaseThumbUrl(){
+  if(previewThumbUrl){
+    URL.revokeObjectURL(previewThumbUrl);
+    previewThumbUrl = null;
+  }
+}
+
+function loadFile(file){
+  if(!file){ return; }
+  if(!file.type || file.type.indexOf("image/") !== 0){
+    toast("That file isn't an image. Try JPG, PNG, GIF, WEBP, BMP or SVG.", "err", 4200);
+    return;
+  }
+  if(file.size > MAX_BYTES){
+    toast("That image is larger than 25 MB. Try a smaller one.", "err", 4200);
+    return;
+  }
+
+  // Drop any previous thumbnail blob before allocating a new one.
+  releaseThumbUrl();
+
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+
+  img.onload = function(){
+    // NOTE: do NOT revoke `url` here. The same URL is reused as the visible
+    // preview thumbnail's src, and revoking it first leaves the <img> pointing
+    // at a dead blob (naturalWidth 0, broken-image placeholder). Revocation
+    // happens once the thumbnail has actually painted, in previewImg.onload.
+    state.image = img;
+    state.fileName = file.name || "pasted-image";
+    // A new image re-opens auto background selection, unless the user has
+    // already expressed a preference in this session.
+    state.bgChosen = false;
+
+    previewThumbUrl = url;
+    previewImg.onload = function(){
+      // The thumbnail has decoded — the blob is no longer needed.
+      URL.revokeObjectURL(previewThumbUrl);
+      previewThumbUrl = null;
+    };
+    previewImg.onerror = function(){
+      URL.revokeObjectURL(previewThumbUrl);
+      previewThumbUrl = null;
+    };
+    previewImg.src = url;
+    dzEmpty.hidden = true;
+    dzPreview.hidden = false;
+    dropzone.classList.add("has-image");
+
+    const mp = (img.naturalWidth * img.naturalHeight / 1e6).toFixed(2);
+    imgMeta.textContent = state.fileName + " · " + img.naturalWidth + "×" + img.naturalHeight + " · " + mp + " MP";
+
+    setButtonsEnabled(true);
+    scheduleConvert(0);
+  };
+
+  img.onerror = function(){
+    // The thumbnail never got a chance to load this blob, so release it here.
+    if(previewThumbUrl === url) releaseThumbUrl();
+    toast("Couldn't decode that image — the file may be corrupt or an unsupported format.", "err", 4600);
+  };
+
+  img.src = url;
+}
+
+function clearImage(){
+  state.image = null;
+  state.fileName = "";
+  state.ascii = ""; state.html = "";
+  releaseThumbUrl();
+  // Detach the handlers before clearing src so a pending onerror from the
+  // outgoing blob cannot fire and raise a spurious decode error.
+  previewImg.onload = null;
+  previewImg.onerror = null;
+  previewImg.removeAttribute("src");
+  dzEmpty.hidden = false;
+  dzPreview.hidden = true;
+  dropzone.classList.remove("has-image");
+  fileInput.value = "";
+  asciiPre.hidden = true; asciiPre.textContent = "";
+  emptyState.hidden = false;
+  setButtonsEnabled(false);
+  setStatus("Idle — waiting for an image", "idle", "—");
+}
+
+function setButtonsEnabled(on){
+  [btnCopy, btnDownload, btnPng].forEach(b => b.disabled = !on);
+}
+
+/* ============================================================
+   Conversion core
+   ============================================================ */
+
+/**
+ * Draw the image into a small offscreen canvas.
+ * @returns {ImageData|null}
+ */
+const workCanvas = document.createElement("canvas");
+const workCtx = workCanvas.getContext("2d", {willReadFrequently:true});
+
+function rasterize(img, cols, rows){
+  workCanvas.width = cols;
+  workCanvas.height = rows;
+  workCtx.clearRect(0, 0, cols, rows);
+
+  // Better than default for downscaling photos: step-down halving.
+  // imageSmoothingQuality handles most cases; explicit multi-step for big drops.
+  let srcW = img.naturalWidth, srcH = img.naturalHeight;
+  const bigDrop = (srcW / cols > 4) || (srcH / rows > 4);
+
+  if(bigDrop){
+    // Progressive halving to avoid aliasing on large downscales.
+    let tmpCanvas = document.createElement("canvas");
+    let tmpCtx = tmpCanvas.getContext("2d");
+    let curW = srcW, curH = srcH;
+    tmpCanvas.width = curW; tmpCanvas.height = curH;
+    tmpCtx.imageSmoothingEnabled = true;
+    tmpCtx.imageSmoothingQuality = "high";
+    tmpCtx.drawImage(img, 0, 0, curW, curH);
+
+    while(curW / 2 > cols && curH / 2 > rows && curW > 2 && curH > 2){
+      const nw = Math.max(1, Math.floor(curW / 2));
+      const nh = Math.max(1, Math.floor(curH / 2));
+      const half = document.createElement("canvas");
+      half.width = nw; half.height = nh;
+      const hc = half.getContext("2d");
+      hc.imageSmoothingEnabled = true;
+      hc.imageSmoothingQuality = "high";
+      hc.drawImage(tmpCanvas, 0, 0, nw, nh);
+      tmpCanvas = half; curW = nw; curH = nh;
+    }
+    workCtx.imageSmoothingEnabled = true;
+    workCtx.imageSmoothingQuality = "high";
+    workCtx.drawImage(tmpCanvas, 0, 0, curW, curH, 0, 0, cols, rows);
+  } else {
+    workCtx.imageSmoothingEnabled = true;
+    workCtx.imageSmoothingQuality = "high";
+    workCtx.drawImage(img, 0, 0, srcW, srcH, 0, 0, cols, rows);
+  }
+
+  try{
+    return workCtx.getImageData(0, 0, cols, rows);
+  }catch(err){
+    return null;
+  }
+}
+
+/** Box-blur-free unsharp mask on a luminance array. */
+function sharpen(lum, cols, rows, amount){
+  const out = lum.slice();
+  for(let y = 1; y < rows - 1; y++){
+    for(let x = 1; x < cols - 1; x++){
+      const i = y * cols + x;
+      // 3x3 gaussian-ish kernel
+      const blur =
+        (lum[i - cols - 1] + lum[i - cols] * 2 + lum[i - cols + 1] +
+         lum[i - 1] * 2       + lum[i] * 4        + lum[i + 1] * 2 +
+         lum[i + cols - 1] + lum[i + cols] * 2 + lum[i + cols + 1]) / 16;
+      let v = lum[i] + amount * (lum[i] - blur);
+      out[i] = v < 0 ? 0 : v > 255 ? 255 : v;
+    }
+  }
+  return out;
+}
+
+/**
+ * Main conversion: image → {ascii, html, cols, rows}
+ */
+function convert(){
+  const img = state.image;
+  if(!img) return null;
+
+  const density = parseFloat(sDensity.value) || 1;
+  let cols = Math.round(parseInt(sWidth.value, 10) * density);
+  cols = Math.max(8, Math.min(600, cols));
+
+  // Character cells are ~2× taller than wide → halve the row count.
+  const aspect = img.naturalHeight / img.naturalWidth;
+  const cellRatio = 0.5;
+  let rows = Math.round(cols * aspect * cellRatio * (1 / density > 1 ? 1 / density : 1));
+  rows = Math.max(4, Math.min(600, rows));
+
+  const data = rasterize(img, cols, rows);
+  if(!data){
+    toast("This browser blocked canvas pixel access, so conversion can't run. Try a different browser.", "err", 5200);
+    return null;
+  }
+
+  // --- Charset / ramp ---
+  let charsetStr = CHARSETS[selCharset.value] || CHARSETS.standard;
+  if(selCharset.value === "custom"){
+    charsetStr = txtCustom.value || CHARSETS.standard;
+  }
+  let ramp = buildRamp(charsetStr);
+
+  // --- Luminance ---
+  const px = data.data;
+  const n = cols * rows;
+  let lum = new Float32Array(n);
+  let rArr = new Uint8Array(n), gArr = new Uint8Array(n), bArr = new Uint8Array(n);
+
+  for(let i = 0; i < n; i++){
+    const o = i * 4;
+    const r = px[o], g = px[o + 1], b = px[o + 2], a = px[o + 3];
+    rArr[i] = r; gArr[i] = g; bArr[i] = b;
+    // Composite over white so transparent PNGs don't read as black.
+    const af = a / 255;
+    const rr = r * af + 255 * (1 - af);
+    const gg = g * af + 255 * (1 - af);
+    const bb = b * af + 255 * (1 - af);
+    rArr[i] = rr; gArr[i] = gg; bArr[i] = bb;
+    // Rec.709 luminance
+    lum[i] = 0.2126 * rr + 0.7152 * gg + 0.0722 * bb;
+  }
+
+  if(chkSharpen.checked) lum = sharpen(lum, cols, rows, 0.9);
+
+  // --- Normalize contrast to full 0..255 range (unless the image is flat) ---
+  let min = Infinity, max = -Infinity;
+  for(let i = 0; i < n; i++){
+    if(lum[i] < min) min = lum[i];
+    if(lum[i] > max) max = lum[i];
+  }
+  const span = max - min;
+  const flat = span < 6;
+  if(!flat){
+    const inv = 255 / span;
+    for(let i = 0; i < n; i++) lum[i] = (lum[i] - min) * inv;
+  }
+
+  const invert = chkInvert.checked;
+  const maxIdx = ramp.length - 1;
+
+  // Mean luminance of the source, measured before the ramp is applied.
+  // Used to pick a preview background that contrasts with the image rather
+  // than fighting it — a light photo belongs on a dark stage and vice versa.
+  let lumSum = 0;
+  for(let i = 0; i < n; i++) lumSum += lum[i];
+  const meanLum = n ? lumSum / n : 128;
+
+  // --- Build rows ---
+  const lines = new Array(rows);
+  const htmlRows = new Array(rows);
+  const useColor = state.colorMode === "color" || state.colorMode === "original";
+
+  for(let y = 0; y < rows; y++){
+    let line = "";
+    let htmlLine = "";
+    let lastColor = null;
+
+    for(let x = 0; x < cols; x++){
+      const i = y * cols + x;
+      let v = lum[i];
+
+      // Map luminance → ramp index.
+      // ramp[0] is the sparsest glyph (a space), ramp[last] is the densest (@/█).
+      // A DARK pixel should pick the DENSE glyph, so dark → high index.
+      let t = 1 - (v / 255);
+      if(invert) t = 1 - t;
+      let idx = Math.round(t * maxIdx);
+      if(idx < 0) idx = 0; else if(idx > maxIdx) idx = maxIdx;
+
+      const ch = ramp[idx];
+      line += ch;
+
+      if(useColor){
+        const r = rArr[i], g = gArr[i], b = bArr[i];
+        // Quantize to 3 bits/channel to keep the HTML compact.
+        const key = ((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5);
+        if(key !== lastColor){
+          if(htmlLine) htmlLine += "</span>";
+          const rr = (r >> 5) * 36 + 18, gg = (g >> 5) * 36 + 18, bb = (b >> 5) * 36 + 18;
+          htmlLine += '<span style="color:#' + hex2(rr) + hex2(gg) + hex2(bb) + '">';
+          lastColor = key;
+        }
+        htmlLine += escapeHtml(ch);
+      }
+    }
+
+    if(useColor && htmlLine) htmlLine += "</span>";
+    lines[y] = line;
+    htmlRows[y] = htmlLine;
+  }
+
+  // --- Trim whitespace ---
+  let outLines = lines, outHtml = htmlRows;
+  if(chkTrim.checked){
+    let top = 0, bottom = rows - 1, left = 0, right = cols - 1;
+    while(top <= bottom && isBlank(lines[top])) top++;
+    while(bottom >= top && isBlank(lines[bottom])) bottom--;
+    if(top > bottom){ top = 0; bottom = rows - 1; }
+    else{
+      while(left <= right && isBlankCol(lines, left, top, bottom)) left++;
+      while(right >= left && isBlankCol(lines, right, top, bottom)) right--;
+    }
+    if(left > right){ left = 0; right = cols - 1; }
+
+    outLines = []; outHtml = [];
+    for(let y = top; y <= bottom; y++){
+      outLines.push(lines[y].slice(left, right + 1));
+      outHtml.push(htmlRows[y] ? sliceHtmlSafe(lines[y], htmlRows[y], left, right) : "");
+    }
+  }
+
+  return {
+    ascii: outLines.join("\n"),
+    html: useColor ? outHtml.join("\n") : null,
+    cols: outLines.length ? outLines[0].length : cols,
+    rows: outLines.length,
+    colored: useColor,
+    meanLum: meanLum
+  };
+}
+
+function isBlank(s){
+  for(let i = 0; i < s.length; i++){ if(s.charCodeAt(i) !== 32) return false; }
+  return true;
+}
+function isBlankCol(lines, col, top, bottom){
+  for(let y = top; y <= bottom; y++){
+    const ch = lines[y].charCodeAt(col);
+    if(ch !== 32 && !isNaN(ch)) return false;
+  }
+  return true;
+}
+/** Slice an HTML line by plain-text column, preserving span tags. */
+function sliceHtmlSafe(plain, html, left, right){
+  // Rebuild by walking the html and counting visible chars.
+  let out = "", vis = 0, i = 0, open = false;
+  while(i < html.length){
+    if(html[i] === "<"){
+      const end = html.indexOf(">", i);
+      if(end === -1) break;
+      const tag = html.slice(i, end + 1);
+      const isClosing = tag.slice(0, 2) === "</";
+      if(vis > right && !isClosing && open){ /* handled below */ }
+      if(vis >= left && vis <= right + 1){
+        if(isClosing){ if(open){ out += tag; open = false; } }
+        else { if(!open || tag.indexOf("span") === -1){ } out += tag; open = true; }
+      } else if(isClosing && open && vis > right){
+        out += tag; open = false;
+      }
+      i = end + 1;
+      continue;
+    }
+    if(html[i] === "&"){
+      // entity — count as 1 visible char
+      const semi = html.indexOf(";", i);
+      if(semi !== -1 && semi - i <= 6){
+        if(vis >= left && vis <= right) out += html.slice(i, semi + 1);
+        vis++; i = semi + 1; continue;
+      }
+    }
+    if(vis >= left && vis <= right) out += html[i];
+    vis++; i++;
+  }
+  if(open) out += "</span>";
+  return out;
+}
+function hex2(v){ return ("0" + v.toString(16)).slice(-2); }
+function escapeHtml(c){
+  if(c === "&") return "&amp;";
+  if(c === "<") return "&lt;";
+  if(c === ">") return "&gt;";
+  if(c === " ") return "&nbsp;";
+  return c;
+}
+
+/* ============================================================
+   Render → output area
+   ============================================================ */
+function render(result){
+  if(!result){
+    emptyState.hidden = false;
+    asciiPre.hidden = true;
+    setButtonsEnabled(false);
+    return;
+  }
+  state.ascii = result.ascii;
+  state.html = result.html;
+  state.cols = result.cols;
+  state.rows = result.rows;
+
+  // On the first conversion after an image is added, pick a preview background
+  // that contrasts with the source rather than competing with it. Only runs
+  // once per image — an explicit choice by the user is never overridden.
+  if(!state.bgChosen && typeof result.meanLum === "number"){
+    const wantDarkStage = result.meanLum < 128;
+    const nextBg = wantDarkStage ? "dark" : "light";
+    if(nextBg !== state.bg){
+      state.bg = nextBg;
+      setSegmented(segBg, nextBg);
+    }
+  }
+
+  emptyState.hidden = true;
+  asciiPre.hidden = false;
+  asciiPre.classList.add("fade-in");
+
+  if(result.colored && result.html){
+    asciiPre.innerHTML = result.html;
+  } else {
+    asciiPre.textContent = result.ascii;
+  }
+
+  applyPreviewTheme();
+  setButtonsEnabled(true);
+  setStatus("Converted", "", result.cols + " × " + result.rows + " chars");
+
+  requestAnimationFrame(()=> asciiPre.classList.remove("fade-in"));
+}
+
+/**
+ * The preview background is independent of the page theme — dark text on a
+ * light stage (or vice versa) must stay legible either way, which is why the
+ * glyph colour is set explicitly rather than inherited.
+ */
+function applyPreviewTheme(){
+  const dark = state.bg === "dark";
+  stage.classList.toggle("stage--dark", dark);
+  stage.classList.toggle("stage--light", !dark);
+  asciiPre.style.background = "transparent";
+  asciiPre.style.color = dark ? "#ededed" : "#101010";
+  fitPreviewFont();
+}
+
+/* Minimum legible glyph size. Below this the preview stops shrinking and
+   scrolls horizontally instead — a 3px preview is technically "fitted" but
+   useless, which defeats the point of a preview. */
+const MIN_PREVIEW_PX = 6;
+
+function fitPreviewFont(){
+  if(!state.cols) return;
+  if(asciiPre.dataset.userSized === "1") return;
+  // Measure against the scroll viewport, not the content box, so padding
+  // changes never push the fit off by a few pixels.
+  const avail = asciiPre.clientWidth - 48;
+  if(avail <= 0) return;
+  const ideal = avail / (state.cols * 0.601);
+  const px = Math.max(MIN_PREVIEW_PX, Math.min(17, ideal));
+  state.fontPx = px;
+  asciiPre.style.fontSize = px.toFixed(2) + "px";
+  // Let the user know when we've hit the floor and scrolling is in play.
+  asciiPre.style.overflowX = ideal < MIN_PREVIEW_PX ? "auto" : "hidden";
+}
+
+/* ============================================================
+   Debounced conversion scheduling
+   ============================================================ */
+function scheduleConvert(delay){
+  if(!state.image) return;
+  if(state.pendingRaf){ clearTimeout(state.pendingRaf); state.pendingRaf = 0; }
+  if(delay === 0){ runConvert(); return; }
+  setStatus("Converting…", "busy");
+  state.pendingRaf = setTimeout(runConvert, delay);
+}
+
+function runConvert(){
+  state.pendingRaf = 0;
+  if(state.busy) return;
+  state.busy = true;
+  try{
+    const res = convert();
+    render(res);
+  }catch(err){
+    console.error(err);
+    toast("Something went wrong while converting. Try a smaller width.", "err", 4800);
+    setStatus("Conversion failed", "idle");
+  }finally{
+    state.busy = false;
+  }
+}
+
+const debounced = (()=>{ let t = 0; return (ms)=>{ clearTimeout(t); t = setTimeout(runConvert, ms); }; })();
+
+/* ============================================================
+   Clipboard
+   ============================================================ */
+async function copyOutput(){
+  if(!state.ascii) return;
+
+  // Color mode → copy rich HTML so Discord/browsers keep the colors.
+  if(state.colorMode !== "mono" && state.html){
+    try{
+      const bg = state.bg === "dark" ? "#0d1117" : "#ffffff";
+      const fg = state.bg === "dark" ? "#e6edf3" : "#1b1f24";
+      const item = new ClipboardItem({
+        "text/html": new Blob(
+          ['<pre style="font-family:monospace;font-size:12px;line-height:1;background:' + bg +
+           ';color:' + fg + ';padding:12px;white-space:pre;margin:0">' + state.html + "</pre>"],
+          {type:"text/html"}),
+        "text/plain": new Blob([state.ascii], {type:"text/plain"})
+      });
+      await navigator.clipboard.write([item]);
+      toast("Copied with colors — paste and it keeps them.", "ok", 2800);
+      return;
+    }catch(err){
+      // Fall through to plain text.
+    }
+  }
+
+  const ok = await copyPlain(state.ascii);
+  if(ok) toast("ASCII art copied to clipboard.", "ok");
+}
+
+async function copyPlain(text){
+  // 1. Modern async API (needs a secure context + an active doc).
+  if(navigator.clipboard && window.isSecureContext){
+    try{
+      await navigator.clipboard.writeText(text);
+      return true;
+    }catch(err){ /* fall through */ }
+  }
+  // 2. Legacy execCommand path — still works in most browsers when the
+  //    async API is unavailable (e.g. http:// or file://).
+  try{
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:0;left:-9999px;opacity:0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    ta.remove();
+    if(ok) return true;
+  }catch(err){ /* ignore */ }
+
+  // 3. Last resort: select the visible output so a single Ctrl+C finishes the job.
+  //    This is genuinely actionable, unlike a dead-end error message.
+  try{
+    const range = document.createRange();
+    range.selectNodeContents(asciiPre);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    asciiPre.focus();
+    toast("Press Ctrl+C (⌘+C) now — the art is selected for you.", "info", 7000);
+    return false;
+  }catch(err){ /* ignore */ }
+
+  toast("Copy was blocked by the browser. Use the .txt download instead.", "err", 6000);
+  return false;
+}
+
+/* ============================================================
+   Downloads
+   ============================================================ */
+function downloadTxt(){
+  if(!state.ascii) return;
+  const blob = new Blob([state.ascii], {type:"text/plain;charset=utf-8"});
+  triggerDownload(blob, baseName() + ".txt");
+  toast("Saved as .txt", "ok");
+}
+
+function downloadPng(){
+  if(!state.ascii) return;
+  const lines = state.ascii.split("\n");
+  const rows = lines.length;
+  const cols = lines.reduce((m,l)=> Math.max(m, l.length), 0);
+  if(!rows || !cols){ toast("Nothing to render yet.", "err"); return; }
+
+  const FS = 22;                       // font size
+  const CW = FS * 0.601;               // monospace advance width
+  const LH = FS * 1.06;                // line height
+  const PAD = 26;
+  const SCALE = 2;                     // retina
+
+  const canvas = document.createElement("canvas");
+  const w = Math.ceil(cols * CW + PAD * 2);
+  const h = Math.ceil(rows * LH + PAD * 2);
+
+  // Guard against runaway canvas sizes.
+  const MAXDIM = 12000;
+  if(w > MAXDIM || h > MAXDIM){
+    toast("That output is too large to export as PNG. Lower the width or density.", "err", 5000);
+    return;
+  }
+
+  canvas.width = w * SCALE;
+  canvas.height = h * SCALE;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(SCALE, SCALE);
+
+  const dark = state.bg === "dark";
+  ctx.fillStyle = dark ? "#0d1117" : "#ffffff";
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.font = FS + 'px ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace';
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+
+  if(state.colorMode === "mono"){
+    ctx.fillStyle = dark ? "#e6edf3" : "#1b1f24";
+    for(let y = 0; y < rows; y++){
+      ctx.fillText(lines[y], PAD, PAD + y * LH);
+    }
+  } else {
+    // Colored: re-derive per-cell colors from the image at canvas resolution.
+    const img = state.image;
+    if(!img){ toast("Source image is gone — re-upload it.", "err"); return; }
+    const density = parseFloat(sDensity.value) || 1;
+    let cc = Math.round(parseInt(sWidth.value, 10) * density);
+    cc = Math.max(8, Math.min(600, cc));
+    const aspect = img.naturalHeight / img.naturalWidth;
+    let rr = Math.round(cc * aspect * 0.5 * (1 / density > 1 ? 1 / density : 1));
+    rr = Math.max(4, Math.min(600, rr));
+
+    const d = rasterize(img, cc, rr);
+    if(d){
+      const px = d.data;
+      for(let y = 0; y < rows && y < rr; y++){
+        for(let x = 0; x < cols && x < cc; x++){
+          const ch = lines[y][x];
+          if(!ch || ch === " ") continue;
+          const o = (y * cc + x) * 4;
+          const a = px[o + 3] / 255;
+          const r = Math.round(px[o] * a + 255 * (1 - a));
+          const g = Math.round(px[o + 1] * a + 255 * (1 - a));
+          const b = Math.round(px[o + 2] * a + 255 * (1 - a));
+          ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+          ctx.fillText(ch, PAD + x * CW, PAD + y * LH);
+        }
+      }
+    } else {
+      ctx.fillStyle = dark ? "#e6edf3" : "#1b1f24";
+      for(let y = 0; y < rows; y++) ctx.fillText(lines[y], PAD, PAD + y * LH);
+    }
+  }
+
+  canvas.toBlob(function(blob){
+    if(!blob){ toast("PNG export failed in this browser.", "err"); return; }
+    triggerDownload(blob, baseName() + ".png");
+    toast("Saved as .png", "ok");
+  }, "image/png");
+}
+
+function baseName(){
+  let n = (state.fileName || "ascii-art").replace(/\.[^.]+$/, "").replace(/[^\w\-]+/g, "-");
+  return (n || "ascii-art") + "-ascii";
+}
+function triggerDownload(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=> URL.revokeObjectURL(url), 1500);
+}
+
+/* ============================================================
+   Event wiring
+   ============================================================ */
+
+// --- Dropzone ---
+dropzone.addEventListener("click", function(e){
+  if(e.target.closest("#btnClear")) return;
+  fileInput.click();
+});
+dropzone.addEventListener("keydown", function(e){
+  if(e.key === "Enter" || e.key === " "){
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+fileInput.addEventListener("change", function(e){
+  const f = e.target.files && e.target.files[0];
+  if(f) loadFile(f);
+});
+
+["dragenter","dragover"].forEach(function(ev){
+  dropzone.addEventListener(ev, function(e){
+    e.preventDefault(); e.stopPropagation();
+    dropzone.classList.add("drag");
+  });
+});
+["dragleave","drop"].forEach(function(ev){
+  dropzone.addEventListener(ev, function(e){
+    e.preventDefault(); e.stopPropagation();
+    if(ev === "dragleave" && dropzone.contains(e.relatedTarget)) return;
+    dropzone.classList.remove("drag");
+  });
+});
+dropzone.addEventListener("drop", function(e){
+  const dt = e.dataTransfer;
+  if(!dt) return;
+  const f = dt.files && dt.files[0];
+  if(f){ loadFile(f); return; }
+  toast("No image found in that drop.", "err");
+});
+
+// Block the browser's default "open the file" behaviour on the whole page.
+["dragover","drop"].forEach(function(ev){
+  window.addEventListener(ev, function(e){ e.preventDefault(); }, false);
+});
+
+// --- Paste from clipboard ---
+window.addEventListener("paste", function(e){
+  const items = e.clipboardData && e.clipboardData.items;
+  if(!items) return;
+  for(let i = 0; i < items.length; i++){
+    if(items[i].type && items[i].type.indexOf("image") === 0){
+      const f = items[i].getAsFile();
+      if(f){ e.preventDefault(); loadFile(f); toast("Image pasted from clipboard.", "ok"); return; }
+    }
+  }
+});
+
+// --- Clear / Reset ---
+btnClear.addEventListener("click", function(e){
+  e.stopPropagation();
+  clearImage();
+  toast("Image removed.", "info", 1600);
+});
+btnReset.addEventListener("click", function(){
+  sWidth.value = 100; vWidth.textContent = "100";
+  sDensity.value = 1; vDensity.textContent = "1.0";
+  selCharset.value = "standard"; txtCustom.hidden = true;
+  chkInvert.checked = false; chkSharpen.checked = false;
+  chkTrim.checked = false; chkLive.checked = true;
+  setSegmented(segColor, "mono"); state.colorMode = "mono";
+  setSegmented(segBg, "dark"); state.bg = "dark"; state.bgChosen = false;
+  updateColorNote();
+  asciiPre.dataset.userSized = "";
+  if(state.image) scheduleConvert(0); else applyPreviewTheme();
+  toast("Settings reset to defaults.", "info", 1800);
+});
+
+// --- Sliders / selects ---
+function onWidthInput(){
+  vWidth.textContent = sWidth.value;
+  asciiPre.dataset.userSized = "";
+  if(chkLive.checked) debounced(70); else scheduleConvert(0);
+}
+sWidth.addEventListener("input", onWidthInput);
+sWidth.addEventListener("change", function(){ if(!chkLive.checked) runConvert(); });
+
+sDensity.addEventListener("input", function(){
+  vDensity.textContent = parseFloat(sDensity.value).toFixed(1);
+  asciiPre.dataset.userSized = "";
+  if(chkLive.checked) debounced(90);
+});
+sDensity.addEventListener("change", function(){ if(!chkLive.checked) runConvert(); });
+
+selCharset.addEventListener("change", function(){
+  txtCustom.hidden = selCharset.value !== "custom";
+  if(!txtCustom.hidden) txtCustom.focus();
+  runConvert();
+});
+txtCustom.addEventListener("input", function(){
+  if(chkLive.checked) debounced(220); else scheduleConvert(0);
+});
+
+chkInvert.addEventListener("change", runConvert);
+chkSharpen.addEventListener("change", runConvert);
+chkTrim.addEventListener("change", runConvert);
+chkLive.addEventListener("change", function(){
+  if(chkLive.checked && state.image) runConvert();
+});
+
+// --- Segmented controls ---
+function setSegmented(container, value){
+  Array.prototype.forEach.call(container.querySelectorAll("button"), function(b){
+    b.classList.toggle("active", b.dataset.color === value || b.dataset.bg === value);
+  });
+}
+segColor.addEventListener("click", function(e){
+  const b = e.target.closest("button");
+  if(!b) return;
+  state.colorMode = b.dataset.color;
+  setSegmented(segColor, state.colorMode);
+  updateColorNote();
+  runConvert();
+});
+segBg.addEventListener("click", function(e){
+  const b = e.target.closest("button");
+  if(!b) return;
+  state.bg = b.dataset.bg;
+  state.bgChosen = true;   // stop auto-selection from overriding this
+  setSegmented(segBg, state.bg);
+  applyPreviewTheme();
+});
+function updateColorNote(){
+  const notes = {
+    mono: "Mono outputs plain text — safest for pasting anywhere.",
+    color: "Color copies rich text so Discord and browsers keep the colors.",
+    original: "Original preserves the source palette cell-by-cell. Heaviest output."
+  };
+  colorNote.textContent = notes[state.colorMode];
+}
+
+// --- Preview font size ---
+// Manual sizing takes over from auto-fit until the width changes again
+// (onWidthInput / onDensityInput clear the flag, handing control back).
+btnFontDec.addEventListener("click", function(){
+  asciiPre.dataset.userSized = "1";
+  state.fontPx = Math.max(MIN_PREVIEW_PX, state.fontPx - 1.5);
+  asciiPre.style.fontSize = state.fontPx.toFixed(2) + "px";
+  asciiPre.style.overflowX = "auto";
+});
+btnFontInc.addEventListener("click", function(){
+  asciiPre.dataset.userSized = "1";
+  state.fontPx = Math.min(30, state.fontPx + 1.5);
+  asciiPre.style.fontSize = state.fontPx.toFixed(2) + "px";
+  asciiPre.style.overflowX = asciiPre.scrollWidth > asciiPre.clientWidth ? "auto" : "hidden";
+});
+
+// --- Copy / download ---
+btnCopy.addEventListener("click", copyOutput);
+btnDownload.addEventListener("click", downloadTxt);
+btnPng.addEventListener("click", downloadPng);
+
+// --- Keyboard shortcuts ---
+window.addEventListener("keydown", function(e){
+  const mod = e.ctrlKey || e.metaKey;
+  if(!mod) return;
+  const k = e.key.toLowerCase();
+  if(k === "s" && state.ascii){
+    e.preventDefault();
+    if(e.shiftKey) downloadPng(); else downloadTxt();
+  } else if(k === "c" && state.ascii && e.shiftKey){
+    // Ctrl+Shift+C → copy ASCII (plain Ctrl+C is left alone for text selection)
+    if(window.getSelection && String(window.getSelection()).length) return;
+    e.preventDefault();
+    copyOutput();
+  } else if(k === "o"){
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+
+// --- Resize refit ---
+let resizeTimer = 0;
+window.addEventListener("resize", function(){
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function(){
+    if(asciiPre.dataset.userSized !== "1") fitPreviewFont();
+  }, 140);
+});
+
+// --- Section navigation ---
+function scrollToId(id){
+  const el = document.getElementById(id);
+  if(el) el.scrollIntoView({behavior:"smooth", block:"start"});
+}
+if(navHow) navHow.addEventListener("click", function(){ scrollToId("how"); });
+if(navFaq) navFaq.addEventListener("click", function(){ scrollToId("faq"); });
+
+// --- Colour-scheme toggle -------------------------------------------------
+// The page follows the OS setting by default; an explicit choice overrides it
+// for the session. This only affects the interface shell — the ASCII preview
+// background stays under its own control.
+const THEME_KEY = "pictotext-theme";
+if(btnTheme) btnTheme.addEventListener("click", function(){
+  const root = document.documentElement;
+  const explicit = root.getAttribute("data-theme");
+  let next;
+  if(explicit){
+    next = explicit === "dark" ? "light" : "dark";
+  } else {
+    // No explicit choice yet — flip away from whatever the OS is showing.
+    const osDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    next = osDark ? "light" : "dark";
+  }
+  root.setAttribute("data-theme", next);
+  try{ sessionStorage.setItem(THEME_KEY, next); }catch(err){}
+  toast(next === "dark" ? "Dark interface." : "Light interface.", "info", 1500);
+});
+
+// --- Reveal on scroll (progressive enhancement) ---
+(function revealOnScroll(){
+  const items = document.querySelectorAll(".reveal");
+  if(!items.length) return;
+  if(!("IntersectionObserver" in window)){
+    Array.prototype.forEach.call(items, function(el){ el.classList.add("in"); });
+    return;
+  }
+  const io = new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if(en.isIntersecting){
+        en.target.classList.add("in");
+        io.unobserve(en.target);
+      }
+    });
+  }, {rootMargin:"0px 0px -8% 0px", threshold:0.06});
+  Array.prototype.forEach.call(items, function(el){ io.observe(el); });
+})();
+
+/* ============================================================
+   Boot
+   ============================================================ */
+(function init(){
+  // Restore an explicit theme choice if one was made this session.
+  try{
+    const saved = sessionStorage.getItem(THEME_KEY);
+    if(saved === "dark" || saved === "light"){
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  }catch(err){}
+
+  updateColorNote();
+  applyPreviewTheme();
+  setStatus("Idle — waiting for an image", "idle", "—");
+
+  // If the page is opened via file:// the clipboard API may be unavailable.
+  if(!window.isSecureContext){
+    // Non-blocking advisory only when relevant.
+    setTimeout(function(){
+      toast("Opened from a local file — copy may need the manual fallback.", "info", 4200);
+    }, 900);
+  }
+})();
+
+})();
+</script>
+</body>
+</html>
