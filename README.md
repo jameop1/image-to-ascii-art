@@ -12,4 +12,4 @@ Convert any picture, logo, or photo into text-based ASCII art ready to paste int
 
 ## Getting Started
 
-Open `index.html` in any modern web browser and select an image to convert.
+Open `index.html` in any modern web browser and select an image to convert or use it on https://jameop1.github.io/image-to-ascii-art/
